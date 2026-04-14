@@ -207,6 +207,13 @@ const intensityBadgeMap: Record<
   },
 };
 
+const getIntensityPriority = (intensity: IntensityOption): number => {
+  if (intensity === "High Priority") return 0;
+  if (intensity === "Steady Pace") return 1;
+  if (intensity === "Low Focus") return 2;
+  return 999;
+};
+
 export default function TasksScreen() {
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [showAllUpcoming, setShowAllUpcoming] = useState(false);
@@ -320,9 +327,16 @@ export default function TasksScreen() {
 
   const sortedTodos = useMemo(() => {
     return [...todos].sort((a, b) => {
+      // Sort by intensity first (High Priority → Steady Pace → Low Focus)
+      const byIntensity =
+        getIntensityPriority(a.intensity) - getIntensityPriority(b.intensity);
+      if (byIntensity !== 0) return byIntensity;
+      // Then by due date
       const byDate = a.dueDate.localeCompare(b.dueDate);
       if (byDate !== 0) return byDate;
+      // Then by completion status
       if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      // Finally by most recently updated
       return b.updatedAt.localeCompare(a.updatedAt);
     });
   }, [todos]);
@@ -357,12 +371,11 @@ export default function TasksScreen() {
       ? Math.round((completedCount / todayTodos.length) * 100)
       : 0;
 
+  const firstUpcoming = upcomingTodos[0];
+  const secondUpcoming = upcomingTodos[1];
   const visibleUpcomingTodos = showAllUpcoming
     ? upcomingTodos
     : upcomingTodos.slice(0, 4);
-
-  const firstUpcoming = visibleUpcomingTodos[0];
-  const secondUpcoming = visibleUpcomingTodos[1];
   const restUpcoming = visibleUpcomingTodos.slice(2);
 
   const visibleHistoryTodos = showAllHistory

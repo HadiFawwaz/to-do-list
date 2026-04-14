@@ -28,7 +28,15 @@ const MONTHS = [
   "November",
   "December",
 ];
-const WEEK_DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"] as const;
+const WEEKDAY_LABELS = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+] as const;
 const INTENSITY_OPTIONS = [
   "High Priority",
   "Steady Pace",
@@ -77,13 +85,20 @@ const addDays = (date: Date, amount: number) => {
   return updated;
 };
 
-const startOfWeekMonday = (date: Date) => {
+const startOfMonth = (date: Date) => {
   const updated = new Date(date);
-  const day = updated.getDay();
-  const shift = day === 0 ? -6 : 1 - day;
-  updated.setDate(updated.getDate() + shift);
+  updated.setDate(1);
   updated.setHours(0, 0, 0, 0);
   return updated;
+};
+
+const getDaysInMonth = (date: Date) => {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+};
+
+const getFirstDayOfWeek = (date: Date) => {
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  return first.getDay();
 };
 
 const parseLegacyDateLabel = (value: unknown): string | null => {
@@ -128,7 +143,8 @@ const normalizeStoredTodo = (raw: unknown): TodoItem => {
       : `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const title = typeof record.title === "string" ? record.title : "";
   const desc = typeof record.desc === "string" ? record.desc : "";
-  const completed = typeof record.completed === "boolean" ? record.completed : false;
+  const completed =
+    typeof record.completed === "boolean" ? record.completed : false;
   const intensity = isIntensityOption(record.intensity)
     ? record.intensity
     : "Steady Pace";
@@ -171,7 +187,7 @@ export default function AddTodoScreen() {
   const [desc, setDesc] = useState("");
   const [intensity, setIntensity] = useState<IntensityOption>("Steady Pace");
   const [selectedDate, setSelectedDate] = useState(() => toISODate(new Date()));
-  const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
+  const [monthStart, setMonthStart] = useState(() => startOfMonth(new Date()));
   const [loadingTask, setLoadingTask] = useState(isEditing);
 
   useEffect(() => {
@@ -185,7 +201,9 @@ export default function AddTodoScreen() {
       try {
         const saved = await AsyncStorage.getItem(STORAGE_KEY);
         const parsed: unknown = saved ? JSON.parse(saved) : [];
-        const todos = Array.isArray(parsed) ? parsed.map(normalizeStoredTodo) : [];
+        const todos = Array.isArray(parsed)
+          ? parsed.map(normalizeStoredTodo)
+          : [];
         const task = todos.find((item) => item.id === taskId);
         if (!active || !task) return;
 
@@ -194,7 +212,7 @@ export default function AddTodoScreen() {
         setIntensity(task.intensity);
         setSelectedDate(task.dueDate);
         const dueDate = parseISODate(task.dueDate);
-        if (dueDate) setWeekStart(startOfWeekMonday(dueDate));
+        if (dueDate) setMonthStart(startOfMonth(dueDate));
       } catch (error) {
         console.log(error);
       } finally {
@@ -208,26 +226,37 @@ export default function AddTodoScreen() {
     };
   }, [isEditing, taskId]);
 
-  const weekDays = useMemo(() => {
-    return WEEK_DAY_LABELS.map((label, index) => {
-      const date = addDays(weekStart, index);
-      return {
-        label,
-        dayNumber: date.getDate(),
+  const monthDays = useMemo(() => {
+    const days = [];
+    const daysInMonth = getDaysInMonth(monthStart);
+    const firstDay = getFirstDayOfWeek(monthStart);
+
+    // Add empty cells for days before month starts
+    for (let i = 0; i < firstDay; i++) {
+      days.push(null);
+    }
+
+    // Add all days of the month
+    for (let i = 1; i <= daysInMonth; i++) {
+      const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), i);
+      days.push({
+        dayNumber: i,
         isoDate: toISODate(date),
-      };
-    });
-  }, [weekStart]);
+      });
+    }
+
+    return days;
+  }, [monthStart]);
 
   const monthYear = useMemo(() => {
     const baseDate = parseISODate(selectedDate) ?? new Date();
     return `${MONTHS[baseDate.getMonth()]} ${baseDate.getFullYear()}`;
   }, [selectedDate]);
 
-  const moveWeek = (direction: -1 | 1) => {
-    setWeekStart((current) => {
-      const next = addDays(current, direction * 7);
-      setSelectedDate(toISODate(next));
+  const moveMonth = (direction: -1 | 1) => {
+    setMonthStart((current) => {
+      const next = new Date(current);
+      next.setMonth(next.getMonth() + direction);
       return next;
     });
   };
@@ -238,7 +267,9 @@ export default function AddTodoScreen() {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEY);
       const parsed: unknown = saved ? JSON.parse(saved) : [];
-      const todos = Array.isArray(parsed) ? parsed.map(normalizeStoredTodo) : [];
+      const todos = Array.isArray(parsed)
+        ? parsed.map(normalizeStoredTodo)
+        : [];
       const now = new Date().toISOString();
 
       if (isEditing && taskId) {
@@ -272,7 +303,10 @@ export default function AddTodoScreen() {
           createdAt: now,
           updatedAt: now,
         };
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify([newTask, ...todos]));
+        await AsyncStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify([newTask, ...todos]),
+        );
       }
 
       router.back();
@@ -284,16 +318,23 @@ export default function AddTodoScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.modalHeader}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerIconBtn}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.headerIconBtn}>
           <Feather name="x" size={20} color="#6b7280" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEditing ? "Edit Task" : "New Task"}</Text>
+        <Text style={styles.headerTitle}>
+          {isEditing ? "Edit Task" : "New Task"}
+        </Text>
         <AppButton
           variant="text"
           label={isEditing ? "Update" : "Save"}
           onPress={handleSaveTask}
           disabled={loadingTask}
-          labelStyle={[styles.headerAction, loadingTask && { color: "#cbd5e1" }]}
+          labelStyle={[
+            styles.headerAction,
+            loadingTask && { color: "#cbd5e1" },
+          ]}
         />
       </View>
 
@@ -332,26 +373,52 @@ export default function AddTodoScreen() {
           </View>
 
           <View style={styles.timelineMonthRow}>
-            <TouchableOpacity onPress={() => moveWeek(-1)} style={styles.chevronBtn}>
+            <TouchableOpacity
+              onPress={() => moveMonth(-1)}
+              style={styles.chevronBtn}>
               <Feather name="chevron-left" size={18} color="#6b7280" />
             </TouchableOpacity>
             <Text style={styles.timelineMonthText}>{monthYear}</Text>
-            <TouchableOpacity onPress={() => moveWeek(1)} style={styles.chevronBtn}>
+            <TouchableOpacity
+              onPress={() => moveMonth(1)}
+              style={styles.chevronBtn}>
               <Feather name="chevron-right" size={18} color="#6b7280" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.timelineDaysRow}>
-            {weekDays.map((day) => {
+          {/* Weekday headers */}
+          <View style={styles.weekdayHeaderRow}>
+            {WEEKDAY_LABELS.map((label) => (
+              <Text key={label} style={styles.weekdayHeaderText}>
+                {label}
+              </Text>
+            ))}
+          </View>
+
+          {/* Calendar grid */}
+          <View style={styles.calendarGrid}>
+            {monthDays.map((day, index) => {
+              if (!day) {
+                return (
+                  <View key={`empty-${index}`} style={styles.dayButtonEmpty} />
+                );
+              }
               const isSelected = selectedDate === day.isoDate;
               return (
                 <TouchableOpacity
                   key={day.isoDate}
                   onPress={() => setSelectedDate(day.isoDate)}
-                  style={styles.dayButton}>
-                  <Text style={styles.weekLabel}>{day.label}</Text>
-                  <View style={[styles.dateCircle, isSelected && styles.dateCircleActive]}>
-                    <Text style={[styles.dateText, isSelected && styles.dateTextActive]}>
+                  style={[styles.dayButton, styles.dayButtonClickable]}>
+                  <View
+                    style={[
+                      styles.dateCircle,
+                      isSelected && styles.dateCircleActive,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.dateText,
+                        isSelected && styles.dateTextActive,
+                      ]}>
                       {day.dayNumber}
                     </Text>
                   </View>
@@ -364,7 +431,10 @@ export default function AddTodoScreen() {
         <View style={styles.cardContainer}>
           <View style={styles.cardHeaderRow}>
             <View style={[styles.iconSquare, { backgroundColor: "#fce7f3" }]}>
-              <Text style={{ color: "#be185d", fontWeight: "700", fontSize: 16 }}>!</Text>
+              <Text
+                style={{ color: "#be185d", fontWeight: "700", fontSize: 16 }}>
+                !
+              </Text>
             </View>
             <Text style={styles.cardTitle}>INTENSITY</Text>
           </View>
@@ -377,10 +447,18 @@ export default function AddTodoScreen() {
                 onPress={() => setIntensity(option)}
                 style={[styles.radioRow, isSelected && styles.radioRowActive]}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={[styles.radioOuter, isSelected && styles.radioOuterActive]}>
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      isSelected && styles.radioOuterActive,
+                    ]}>
                     {isSelected && <View style={styles.radioInner} />}
                   </View>
-                  <Text style={[styles.radioText, isSelected && styles.radioTextActive]}>
+                  <Text
+                    style={[
+                      styles.radioText,
+                      isSelected && styles.radioTextActive,
+                    ]}>
                     {option}
                   </Text>
                 </View>
@@ -472,8 +550,17 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 18,
   },
-  cardHeaderRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  cardTitle: { fontSize: 11, fontWeight: "800", color: "#606877", letterSpacing: 1 },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#606877",
+    letterSpacing: 1,
+  },
   iconSquare: {
     width: 30,
     height: 30,
@@ -491,20 +578,31 @@ const styles = StyleSheet.create({
   },
   chevronBtn: { padding: 4 },
   timelineMonthText: { fontSize: 13, fontWeight: "700", color: "#3d4451" },
-  timelineDaysRow: { flexDirection: "row", justifyContent: "space-between" },
-  dayButton: { alignItems: "center", width: 36 },
-  weekLabel: {
-    fontSize: 11,
-    color: "#9aa0ae",
-    fontWeight: "700",
-    marginBottom: 8,
+  weekdayHeaderRow: {
+    flexDirection: "row",
+    marginBottom: 12,
   },
+  weekdayHeaderText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#9aa0ae",
+    flex: 1,
+    textAlign: "center",
+  },
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  dayButton: { flexBasis: "14.28%", alignItems: "center", marginBottom: 12 },
+  dayButtonEmpty: { flexBasis: "14.28%", marginBottom: 12 },
+  dayButtonClickable: {},
   dateCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#f0f4f8",
   },
   dateCircleActive: { backgroundColor: "#6366f1" },
   dateText: { fontSize: 11, fontWeight: "700", color: "#545b68" },
@@ -535,7 +633,12 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   radioOuterActive: { borderColor: "#6366f1" },
-  radioInner: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: "#6366f1" },
+  radioInner: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: "#6366f1",
+  },
   radioText: { fontSize: 13, color: "#4d5462", fontWeight: "600" },
   radioTextActive: { color: "#2f3541", fontWeight: "700" },
   bottomBar: {
@@ -571,4 +674,3 @@ const styles = StyleSheet.create({
   cancelText: { fontWeight: "700", color: "#5f6673", fontSize: 14 },
   saveText: { fontWeight: "700", color: "#fff", fontSize: 14 },
 });
-
